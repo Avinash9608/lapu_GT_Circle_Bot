@@ -1,19 +1,20 @@
 import os
 import json
 import re
-from dotenv import load_dotenv
+import threading
 from flask import Flask
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    filters,
+    filters
 )
 
 # -------------------------------
-# Flask keep-alive app
+# Flask keep-alive
 # -------------------------------
 app = Flask(__name__)
 
@@ -22,7 +23,7 @@ def home():
     return "Circle Chatbot is live 🎉"
 
 # -------------------------------
-# Load environment variables
+# Load environment
 # -------------------------------
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -37,7 +38,7 @@ except json.JSONDecodeError as e:
     raise ValueError(f"⚠ Failed to parse CIRCLE_DATA JSON: {e}")
 
 # -------------------------------
-# Circle info
+# Circle data
 # -------------------------------
 CIRCLE_FULL_NAMES = {
     "DEL": "Delhi", "UPW": "Uttar Pradesh West", "PUN": "Punjab",
@@ -59,7 +60,7 @@ CIRCLE_ALIASES = {
 }
 
 # -------------------------------
-# Utility functions
+# Utility
 # -------------------------------
 def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9 &]", "", text.lower())
@@ -70,16 +71,13 @@ def extract_hub_number(text: str):
 
 def find_circle(user_text: str):
     text = normalize(user_text)
-    # Alias matching
     for circle, aliases in CIRCLE_ALIASES.items():
         for alias in aliases:
             if alias in text:
                 return circle
-    # Full name matching
     for circle, full_name in CIRCLE_FULL_NAMES.items():
         if normalize(full_name) in text:
             return circle
-    # Exact code
     for circle in DATA.keys():
         if circle.lower() in text.split():
             return circle
@@ -92,9 +90,7 @@ def get_response(user_input: str) -> str:
 
     if hub_no:
         circles = [c for c, info in DATA.items() if info["hub"].lower().endswith(hub_no)]
-        if circles:
-            return f"Hub {hub_no} me circles hain: " + ", ".join(circles)
-        return f"Hub {hub_no} me koi circle nahi mila"
+        return f"Hub {hub_no} me circles hain: {', '.join(circles)}" if circles else f"Hub {hub_no} me koi circle nahi mila"
 
     if not circle:
         return "❓ Circle ka naam clear nahi hai (Delhi / Assam / UPW etc)"
@@ -131,23 +127,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Main
 # -------------------------------
 if __name__ == "__main__":
-    import asyncio
-
+    # Telegram bot
     bot_app = ApplicationBuilder().token(TOKEN).build()
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Telegram bot is running...")
 
-    # -------------------------------
-    # Run both Flask and Telegram
-    # -------------------------------
-    # Run Telegram bot (async)
-    async def run_all():
-        # Flask server in background
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, lambda: app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000))))
-        # Telegram bot polling
-        await bot_app.run_polling()
+    # Start Flask keep-alive in a daemon thread
+    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000))), daemon=True).start()
 
-    asyncio.run(run_all())
+    # Run Telegram bot polling (blocking call, safe on Windows)
+    bot_app.run_polling()
