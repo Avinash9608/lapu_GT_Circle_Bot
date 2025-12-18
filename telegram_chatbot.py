@@ -1,20 +1,20 @@
 import os
 import json
 import re
-import threading
-from keep_alive import app as keep_alive_app
+from flask import Flask, request
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-# Start the Flask server in a separate thread
-t = threading.Thread(target=lambda: keep_alive_app.run(host="0.0.0.0", port=5000))
-t.start()
+# -------------------------------
+# Flask App
+# -------------------------------
+app = Flask(__name__)
+
 # -------------------------------
 # Load .env
 # -------------------------------
 load_dotenv()
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CIRCLE_DATA_ENV = os.getenv("CIRCLE_DATA")
 
@@ -76,36 +76,24 @@ def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9 &]", "", text.lower())
 
 def extract_hub_number(text: str):
-    """Extract hub number from text, e.g., 'hub 4' => '4'"""
     match = re.search(r"hub\s*(\d+)", text.lower())
-    if match:
-        return match.group(1)
-    return None
+    return match.group(1) if match else None
 
 def find_circle(user_text: str):
-    """Find circle from text using aliases, full names, or exact code"""
     text = normalize(user_text)
-
-    # 1️⃣ Alias matching
     for circle, aliases in CIRCLE_ALIASES.items():
         for alias in aliases:
             if alias in text:
                 return circle
-
-    # 2️⃣ Full name matching
     for circle, full_name in CIRCLE_FULL_NAMES.items():
         if normalize(full_name) in text:
             return circle
-
-    # 3️⃣ Exact circle code in user input
     for circle in DATA.keys():
         if circle.lower() in text.split():
             return circle
-
     return None
 
 def get_response(user_input: str) -> str:
-    """Generate response based on user input"""
     text = normalize(user_input)
     circle = find_circle(text)
     hub_no = extract_hub_number(text)
@@ -120,7 +108,6 @@ def get_response(user_input: str) -> str:
         return "❓ Circle ka naam clear nahi hai (Delhi / Assam / UPW etc)"
 
     info = DATA[circle]
-
     if "in" in text:
         return f"{circle} ka IN : {info['in']}"
     if "hub" in text:
@@ -131,7 +118,6 @@ def get_response(user_input: str) -> str:
         return f"{circle} ka Circle Code : {info['circle_code']}"
     if "dth" in text:
         return f"{circle} ka DTH Circle Code : {info.get('dth_circle_code','N/A')}"
-
     return f"❓ Question thoda clear poochiye (hub / in / code / group / dth). {circle} - {CIRCLE_FULL_NAMES.get(circle)}"
 
 # -------------------------------
@@ -148,14 +134,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response)
 
 # -------------------------------
+# Telegram Bot Setup (Webhook)
+# -------------------------------
+bot_app = ApplicationBuilder().token(TOKEN).build()
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+bot = bot_app.bot
+
+# Flask route for Telegram webhook
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    bot_app.update_queue.put(update)
+    return "OK"
+
+# Route to test server
+@app.route("/")
+def index():
+    return "Circle Chatbot is running!"
+
+# -------------------------------
 # Main
 # -------------------------------
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Telegram bot is running...")
-    app.run_polling()
+    # Start Telegram bot in background
+    bot_app.start()
+    bot_app.updater.start_polling()  # Optional, for local testing
+    # Start Flask server
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
