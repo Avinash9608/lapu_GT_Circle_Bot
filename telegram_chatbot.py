@@ -1,10 +1,15 @@
 import os
 import json
 import re
+import threading
+from keep_alive import app as keep_alive_app
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
+# Start the Flask server in a separate thread
+t = threading.Thread(target=lambda: keep_alive_app.run(host="0.0.0.0", port=5000))
+t.start()
 # -------------------------------
 # Load .env
 # -------------------------------
