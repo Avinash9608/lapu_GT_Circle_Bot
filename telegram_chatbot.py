@@ -1,20 +1,16 @@
+# telegram_chatbot.py
 import os
 import json
 import re
-from flask import Flask, request
 from dotenv import load_dotenv
-from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # -------------------------------
-# Flask App
-# -------------------------------
-app = Flask(__name__)
-
-# -------------------------------
-# Load .env
+# Load environment
 # -------------------------------
 load_dotenv()
+
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CIRCLE_DATA_ENV = os.getenv("CIRCLE_DATA")
 
@@ -24,7 +20,6 @@ if not TOKEN:
 if not CIRCLE_DATA_ENV:
     raise ValueError("⚠ CIRCLE_DATA not found in .env")
 
-# Load circle data
 try:
     DATA = json.loads(CIRCLE_DATA_ENV)
 except json.JSONDecodeError as e:
@@ -69,10 +64,9 @@ CIRCLE_ALIASES = {
 }
 
 # -------------------------------
-# Utility Functions
+# Utility functions
 # -------------------------------
 def normalize(text: str) -> str:
-    """Lowercase, remove special chars except space and &"""
     return re.sub(r"[^a-z0-9 &]", "", text.lower())
 
 def extract_hub_number(text: str):
@@ -81,16 +75,20 @@ def extract_hub_number(text: str):
 
 def find_circle(user_text: str):
     text = normalize(user_text)
+
     for circle, aliases in CIRCLE_ALIASES.items():
         for alias in aliases:
             if alias in text:
                 return circle
+
     for circle, full_name in CIRCLE_FULL_NAMES.items():
         if normalize(full_name) in text:
             return circle
+
     for circle in DATA.keys():
         if circle.lower() in text.split():
             return circle
+
     return None
 
 def get_response(user_input: str) -> str:
@@ -108,6 +106,7 @@ def get_response(user_input: str) -> str:
         return "❓ Circle ka naam clear nahi hai (Delhi / Assam / UPW etc)"
 
     info = DATA[circle]
+
     if "in" in text:
         return f"{circle} ka IN : {info['in']}"
     if "hub" in text:
@@ -118,10 +117,11 @@ def get_response(user_input: str) -> str:
         return f"{circle} ka Circle Code : {info['circle_code']}"
     if "dth" in text:
         return f"{circle} ka DTH Circle Code : {info.get('dth_circle_code','N/A')}"
+
     return f"❓ Question thoda clear poochiye (hub / in / code / group / dth). {circle} - {CIRCLE_FULL_NAMES.get(circle)}"
 
 # -------------------------------
-# Telegram Handlers
+# Handlers
 # -------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -134,31 +134,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response)
 
 # -------------------------------
-# Telegram Bot Setup (Webhook)
+# Application
 # -------------------------------
 bot_app = ApplicationBuilder().token(TOKEN).build()
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-bot = bot_app.bot
-
-# Flask route for Telegram webhook
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    bot_app.update_queue.put(update)
-    return "OK"
-
-# Route to test server
-@app.route("/")
-def index():
-    return "Circle Chatbot is running!"
-
-# -------------------------------
-# Main
-# -------------------------------
-if __name__ == "__main__":
-    # Start Telegram bot in background
-    bot_app.start()
-    bot_app.updater.start_polling()  # Optional, for local testing
-    # Start Flask server
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

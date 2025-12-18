@@ -1,9 +1,22 @@
-from flask import Flask
+# keep_alive.py
+import os
+from flask import Flask, request
+from telegram import Update
+from telegram.ext import ApplicationBuilder
+
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "Bot is alive!"
+from telegram_chatbot import bot_app  # import the bot instance
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot is running ✅"
+
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    """Telegram will POST updates here"""
+    update = Update.de_json(request.get_json(force=True), bot_app.bot)
+    bot_app.update_queue.put(update)  # send update to the bot
+    return "ok"
