@@ -1,0 +1,27 @@
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment folder (if you use venv)
+venv/
+env/
+
+# dotenv file (contains secrets)
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Node modules if you also have React/frontend
+node_modules/
+
+# Optional: IDE config folders
+.vscode/
+.idea/
+
+data.json
